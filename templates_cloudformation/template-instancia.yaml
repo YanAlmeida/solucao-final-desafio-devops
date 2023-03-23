@@ -1,0 +1,249 @@
+Description: Template para criacao de instancia linux com Java instalado
+Parameters:
+  EnvironmentName:
+    Description: An environment name that is prefixed to resource names
+    Type: String
+
+  PublicSubnetId:
+    Description: Subnet to place the instance in.
+    Type: AWS::EC2::Subnet::Id
+    ConstraintDescription: must be a valid subnet ID.
+
+  VpcId:
+    Description: VPC where the Security Group will be created.
+    Type: AWS::EC2::VPC::Id
+    ConstraintDescription: must be a valid VPC ID.
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet::Id
+    Description: The subnet for the DB cluster
+    ConstraintDescription: must be a valid subnet ID.
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet::Id
+    Description: The subnet for the DB cluster
+    ConstraintDescription: must be a valid subnet ID.
+
+  PrivateSubnet3:
+    Type: AWS::EC2::Subnet::Id
+    Description: The subnet for the DB cluster
+    ConstraintDescription: must be a valid subnet ID.
+
+  KeyName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instance
+    Type: AWS::EC2::KeyPair::KeyName
+    ConstraintDescription: must be the name of an existing EC2 KeyPair.
+
+  InstanceType:
+    Description: WebServer EC2 instance type
+    Type: String
+    Default: t2.micro
+
+  SSHLocation:
+    Description: The IP address range that can be used to SSH to the EC2 instances
+    Type: String
+    MinLength: 9
+    MaxLength: 18
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+    ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
+
+  LatestAmiId:
+    Type:  'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
+
+  SourceCodeBucketName:
+    Description: Name of the bucket where the JAR file is located
+    Type: String
+
+  JarFileName:
+    Description: Name of the JAR file inside the bucket
+    Type: String
+
+  DBName:
+    Description: Name of the MySQL Database Schema
+    Type: String
+
+Resources:
+  DBSecurityGroup:
+      Type: "AWS::EC2::SecurityGroup"
+      Properties:
+          GroupDescription: "Database instances security group"
+          VpcId: !Ref VpcId
+          SecurityGroupIngress: 
+            - SourceSecurityGroupId: !GetAtt InstanceSecurityGroup.GroupId
+              FromPort: 3306
+              IpProtocol: "tcp"
+              ToPort: 3306
+
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable SSH access via port 22
+      VpcId: !Ref 'VpcId'
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp: !Ref 'SSHLocation'
+      - IpProtocol: tcp
+        FromPort: 8080
+        ToPort: 8080
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 443
+        ToPort: 443
+        CidrIp: 0.0.0.0/0
+
+  RDSSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: RDS instance username and password secret
+      GenerateSecretString:
+        SecretStringTemplate: '{"username": "admin"}'
+        GenerateStringKey: password
+        PasswordLength: 32
+        ExcludePunctuation: true
+
+  RDSDBSubnetGroup:
+      Type: "AWS::RDS::DBSubnetGroup"
+      Properties:
+          DBSubnetGroupDescription: "Subnet Group for mySQL database"
+          DBSubnetGroupName: !Sub "${AWS::Region}-aws-lets-code-ada-subnet-group"
+          SubnetIds: 
+            - !Ref PrivateSubnet1
+            - !Ref PrivateSubnet2
+            - !Ref PrivateSubnet3
+
+  RDSDBInstance:
+      Type: AWS::RDS::DBInstance
+      Properties:
+          DBInstanceIdentifier: aws-lets-code-ada
+          AllocatedStorage: 20
+          DBInstanceClass: db.t2.micro
+          DBName: !Ref DBName
+          Engine: mysql
+          MasterUsername: !Sub "{{resolve:secretsmanager:${RDSSecret}::username}}"
+          MasterUserPassword: !Sub "{{resolve:secretsmanager:${RDSSecret}::password}}"
+          BackupRetentionPeriod: 0
+          MultiAZ: false
+          EngineVersion: 8.0.32
+          AutoMinorVersionUpgrade: false
+          PubliclyAccessible: false
+          StorageType: gp2
+          Port: 3306
+          EnableIAMDatabaseAuthentication: false
+          EnablePerformanceInsights: false
+          DeletionProtection: false
+          DBSubnetGroupName: !Ref RDSDBSubnetGroup
+          VPCSecurityGroups: 
+            - !Ref DBSecurityGroup
+
+  RDSEndpointParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Type: String
+      Name: '/Application/RdsInstance/EndpointUrl'
+      Description: Endpoint address to the RDS MySql database
+      Value: !GetAtt RDSDBInstance.Endpoint.Address
+
+  SecretsManagerAndS3AccessRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Description: Role to provide access to secrets manager and s3
+      Policies:
+        - PolicyName: SecretsManagerPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: 'secretsmanager:GetSecretValue'
+                Resource: !Ref RDSSecret
+        - PolicyName: S3GetObjectPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: 's3:GetObject'
+                Resource: !Sub 'arn:aws:s3:::${SourceCodeBucketName}/*'
+      RoleName: SecretsManagerFetchAndS3GetRole
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref SecretsManagerAndS3AccessRole
+
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref 'InstanceType'
+      SecurityGroupIds:
+        - !GetAtt InstanceSecurityGroup.GroupId
+      SubnetId: !Ref 'PublicSubnetId'
+      KeyName: !Ref 'KeyName'
+      ImageId: !Ref 'LatestAmiId'
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      UserData:
+        Fn::Base64:
+          !Sub |
+            #!/bin/bash -v
+
+            yum update -y aws-cfn-bootstrap
+            yum install -y jq
+            amazon-linux-extras install java-openjdk11 -y
+
+            export MYSQL_DB_HOST=jdbc:mysql://${RDSDBInstance.Endpoint.Address}:3306/${DBName}
+            export MYSQL_DB_USER=$(aws --region ${AWS::Region} secretsmanager get-secret-value --secret-id ${RDSSecret} --query SecretString --output text | jq -r .username)
+            export MYSQL_DB_PASS=$(aws --region ${AWS::Region} secretsmanager get-secret-value --secret-id ${RDSSecret} --query SecretString --output text | jq -r .password)
+
+            /opt/aws/bin/cfn-init -s ${AWS::StackId} -r EC2Instance --region ${AWS::Region} || error_exit 'Failed to run cfn-init'
+      Tags:
+        - Key: Environment
+          Value: !Ref 'EnvironmentName'
+    Metadata:
+      Comment: Get and run java application
+      AWS::CloudFormation::Init:
+        config:
+          commands:
+            getJarFile:
+              command: !Sub "aws s3api get-object --bucket ${SourceCodeBucketName} --key ${JarFileName} /opt/letscodeada.jar"
+            runApplicationJar:
+              command: "java -jar /opt/letscodeada.jar"
+
+  IPAddress:
+    Type: AWS::EC2::EIP
+
+  IPAssoc:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      InstanceId: !Ref EC2Instance
+      EIP: !Ref IPAddress
+
+Outputs:
+  InstanceId:
+    Description: InstanceId of the newly created EC2 instance
+    Value: !Ref 'EC2Instance'
+  AZ:
+    Description: Availability Zone of the newly created EC2 instance
+    Value: !GetAtt [EC2Instance, AvailabilityZone]
+  PublicDNS:
+    Description: Public DNSName of the newly created EC2 instance
+    Value: !GetAtt [EC2Instance, PublicDnsName]
+  PublicIP:
+    Description: Public IP address of the newly created EC2 instance
+    Value: !GetAtt [EC2Instance, PublicIp]
+  SSMParameterRDSEndpointArn:
+    Description: ARN do parametro contendo o endpoint do RDS
+    Value: !Ref RDSEndpointParameter
+  RDSSecretArn:
+    Description: ARN do segredo contendo usuario/senha do RDS
+    Value: !Ref RDSSecret
