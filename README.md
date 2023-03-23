@@ -3,6 +3,41 @@
 Esse repositório consiste na solução do desafio proposto.
 Desenvolvi a solução em duas etapas: a primeira consistindo no desenvolvimento dos templates IaC e no deploy da aplicação na cloud escolhida (AWS) e a segunda consistindo na criação dos dockerfiles, build das imagens e desenvolvimento dos manifests para deploy da aplicação em cluster Kubernetes. A segunda parte foi testada localmente, utilizando o MiniKube.
 
+## Organização do repositório
+
+```
+
+├── backend
+│   ├── app
+│   │   └── ...
+│   ├── manifests
+│   │   ├── deployment.yaml
+│   │   ├── ingress.yaml
+│   │   ├── secrets.yaml
+│   │   └── service.yaml
+│   └── Dockerfile
+├── frontend
+│   ├── app
+│   │   └── ...
+│   ├── manifests
+│   │   ├── deployment.yaml
+│   │   ├── ingress.yaml
+│   │   └── service.yaml
+│   └── Dockerfile
+├── database
+│   └── manifests
+│   │   ├── deployment.yaml
+│   │   ├── secrets.yaml
+│   │   └── service.yaml
+├── templates_cloudformation
+│   ├── template-bucket-deploy-backend.yaml # Contém a criação do bucket para armazenar o .JAR
+│   ├── template-bucket-website-frontend.yaml # Contém a criação do bucket para hospedagem do website estático
+│   ├── template-instancia.yaml # Contém a criação da instância, do banco de dados e de todos os recursos necessários (security groups, roles etc.)
+│   └── template-vpc.yaml # Contém a criação da VPC e suas subredes
+└── deploy_app.sh
+
+```
+
 ## Parte 1 - Efetuando o deploy na AWS
 
 Inicialmente, desenvolvi o template IaC para criação da VPC com três subredes públicas e três subredes privadas. Como parâmetros default, dado que é especificado que o tamanho da rede é pequeno, estabeleci os ranges de IPs da seguinte forma: utilizando a máscara /25 para a VPC, possibilitando 128 hosts, e a máscara /28 para cada uma das 6 subredes, possibilitando 16 hosts para cada. No template, é criada a VPC, bem como suas subredes (públicas e privadas), o Internet Gateway para as redes públicas e a Route Table pública.
