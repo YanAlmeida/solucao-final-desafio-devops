@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: letscodebyadabackend
+  name: letscodebyadabackend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: letscodebyadabackend
+  template:
+    metadata:
+      labels:
+        app: letscodebyadabackend
+    spec:
+      containers:
+      - image: yanalmeida91/letscodebyada:latest
+        name: letscodebyada
+        ports:
+          - containerPort: 8080
+        env:
+          - name: MYSQL_DB_HOST
+            valueFrom: 
+              secretKeyRef:
+                name: backend-secrets
+                key: mysql_db_host
+          - name: MYSQL_DB_USER
+            valueFrom: 
+              secretKeyRef:
+                name: backend-secrets
+                key: mysql_db_user
+          - name: MYSQL_DB_PASS
+            valueFrom: 
+              secretKeyRef:
+                name: backend-secrets
+                key: mysql_db_pass
