@@ -1,0 +1,17 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: frontend-ing
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: letscode.devops.com
+    http:
+      paths:
+      - backend:
+          service:
+            name: letscodebyadafrontend-svc
+            port:
+              number: 80
+        path: /
+        pathType: Prefix

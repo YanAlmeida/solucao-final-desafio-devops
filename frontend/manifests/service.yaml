@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: letscodebyadafrontend-svc
+  name: letscodebyadafrontend-svc
+spec:
+  ports:
+  - name: frontend
+    port: 80
+    protocol: TCP
+    targetPort: 80
+  selector:
+    app: letscodebyadafrontend
+  type: ClusterIP

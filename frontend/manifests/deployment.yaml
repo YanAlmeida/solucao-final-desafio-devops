@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: letscodebyadafrontend
+  name: letscodebyadafrontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: letscodebyadafrontend
+  template:
+    metadata:
+      labels:
+        app: letscodebyadafrontend
+    spec:
+      containers:
+      - image: yanalmeida91/letscodebyadafrontend:latest
+        name: letscodebyadafrontend
+        ports:
+          - containerPort: 80
+        env:
+          - name: API_URL
+            value: http://backend.devops.com
